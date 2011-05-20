@@ -183,10 +183,10 @@ library
     Parser.Incremental
 
   build-depends:
-    Cabal >= 1.10 && < 1.11,
-    Diff >=0.1 && <0.2,
+    Cabal >= 1.10 && < 1.12,
+    Diff >= 0.1 && < 0.2,
     array, containers,  directory, process, old-locale,
-    base >=4 && <5,
+    base >= 4 && < 5,
     binary == 0.5.*,
     bytestring >=0.9.1 && <0.9.2,
     cautious-file == 1.0.*,
