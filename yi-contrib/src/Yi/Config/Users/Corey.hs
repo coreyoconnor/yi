@@ -9,6 +9,7 @@ import Yi.Prelude
 import Prelude ()
 
 import Yi
+import Yi.Config.Default
 import Yi.Keymap.Vim
 import Yi.Buffer.Indent (indentAsPreviousB)
 import Yi.Keymap.Keys
@@ -17,6 +18,7 @@ import Yi.Misc (adjBlock)
 -- import qualified Yi.UI.Vty
 
 import Yi.Style.Library (darkBlueTheme)
+
 import Data.List (isPrefixOf, reverse, replicate)
 import Control.Monad (replicateM_)
 
@@ -34,10 +36,8 @@ noHaskellAnnots m
     | modeName m == "haskell" = m { modeGetAnnotations = modeGetAnnotations emptyMode }
     | otherwise = m
 
-config = defaultConfig 
+config = defaultVimConfig 
     {
-        -- Use VTY as the default UI.
-        -- startFrontEnd = Yi.UI.Vty.start,
         defaultKm = mkKeymap extendedVimKeymap,
         modeTable = fmap (onMode $ noHaskellAnnots . prefIndent) (modeTable defaultConfig),
         configUI = (configUI defaultConfig)
