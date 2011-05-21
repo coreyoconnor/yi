@@ -215,13 +215,13 @@ checkFileChanges e0 = do
                Right fname -> do 
                   fe <- doesFileExist fname
                   if not fe then nothing else do
-                  modTime <- fileModTime fname
-                  if b ^. lastSyncTimeA < modTime
-                     then if isUnchangedBuffer b
-                       then do newContents <- UTF8.readFile fname
-                               return (snd $ runBuffer (dummyWindow $ bkey b) b (revertB newContents now), Just msg1)
-                       else do return (b, Just msg2)
-                     else nothing
+                      modTime <- fileModTime fname
+                      if b ^. lastSyncTimeA < modTime
+                         then if isUnchangedBuffer b
+                           then do newContents <- UTF8.readFile fname
+                                   return (snd $ runBuffer (dummyWindow $ bkey b) b (revertB newContents now), Just msg1)
+                           else do return (b, Just msg2)
+                         else nothing
                _ -> nothing
           else nothing  
         -- show appropriate update message if applicable

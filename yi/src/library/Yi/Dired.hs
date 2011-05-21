@@ -488,11 +488,11 @@ diredUpDir = do
 diredCreateDir :: YiM ()
 diredCreateDir = do
     withMinibufferGen "" noHint "Create Dir:" return $ \nm -> do
-    dir <- currentDir
-    let newdir = dir </> nm
-    msgEditor $ "Creating "++newdir++"..."
-    io $ createDirectoryIfMissing True newdir
-    diredRefresh
+        dir <- currentDir
+        let newdir = dir </> nm
+        msgEditor $ "Creating "++newdir++"..."
+        io $ createDirectoryIfMissing True newdir
+        diredRefresh
 
 
 -- | Elementary operations for dired file operations
