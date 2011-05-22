@@ -266,7 +266,7 @@ syncWindows e ui = sync
       | L.any (match w) cs = remove c >> sync (w:ws) cs
       | otherwise          = (:) <$> insert (Just $ widget c) w <*> sync ws (c:cs)
 
-    match w c = winkey (fst w) == winkey (window c)
+    match w c = wkey (fst w) == wkey (window c)
 
     winbuf = flip findBufferWith e . bufkey
 
