@@ -25,7 +25,6 @@ library
     Yi.Config.Users.Gwern
     Yi.Config.Users.Jeff
     Yi.Config.Users.JP
-    Yi.Style.Misc
     Yi.Templates
 
   build-depends:
