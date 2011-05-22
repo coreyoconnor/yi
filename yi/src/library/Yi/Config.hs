@@ -1,7 +1,10 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Yi.Config where
 
 import qualified Data.Map as M
 import Data.Prototype
+import Data.Accessor.Template
 
 import Yi.Buffer
 import Yi.Layout
@@ -9,6 +12,7 @@ import Yi.Config.Misc
 import {-# source #-} Yi.Keymap
 import {-# source #-} Yi.Editor
 import Data.Dynamic
+import Yi.Dynamic(ConfigVariables)
 import Yi.Event
 import Yi.Style
 import Yi.Style.Library
@@ -59,8 +63,10 @@ data Config = Config {startFrontEnd :: UIBoot,
                       -- ^ Set to 'True' for an emacs-like behaviour, where 
                       -- all deleted text is accumulated in a killring.
                       bufferUpdateHandler :: [([Update] -> BufferM ())],
-                      layoutManagers :: [AnyLayoutManager]
+                      layoutManagers :: [AnyLayoutManager],
                       -- ^ List of layout managers for 'cycleLayoutManagersNext'
+                      configVars :: ConfigVariables
+                      -- ^ Custom configuration, containing the 'YiConfigVariable's. Configure with 'configVariableA'.
                      }
 
 configFundamentalMode :: Config -> AnyMode
@@ -70,3 +76,6 @@ configTopLevelKeymap :: Config -> Keymap
 configTopLevelKeymap = extractTopKeymap . defaultKm
 
 type UIBoot = Config -> (Event -> IO ()) -> ([Action] -> IO ()) ->  Editor -> IO UI
+
+$(nameDeriveAccessors ''Config (\n -> Just (n ++ "A")))
+$(nameDeriveAccessors ''UIConfig (\n -> Just (n ++ "A")))
