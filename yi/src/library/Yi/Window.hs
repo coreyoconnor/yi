@@ -41,11 +41,6 @@ instance Binary Window where
                    <*> return 0 <*> return emptyRegion
                    <*> get <*> get
 
-
--- | Get the identification of a window.
-winkey :: Window -> (Bool, BufferRef)
-winkey w = (isMini w, bufkey w)
-
 instance Show Window where
     show w = "Window to " ++ show (bufkey w) 
              -- ++ "{" ++ show (tospnt w) ++ "->" ++ show (bospnt w) ++ "}" 
