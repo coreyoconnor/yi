@@ -77,3 +77,11 @@ darkBlueTheme = defaultTheme `override` \super _ -> super
   , variableStyle      = withFg cyan
   , operatorStyle      = withFg brown
   }
+
+-- | A variation on darkBlueTheme suitable for Terminal.app's colors.
+darkMacTerminalDarkBlueTheme = darkBlueTheme `override` \super _ -> super
+    { importStyle = withFg magenta
+    , makeFileAction = withFg magenta
+    , quoteStyle = withFg magenta
+    }
+
