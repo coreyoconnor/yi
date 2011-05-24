@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP, ExistentialQuantification, DoRec, TupleSections #-}
+{-# OPTIONS_GHC -funbox-strict-fields #-}
 
 -- Copyright (c) 2007, 2008 Jean-Philippe Bernardy
 
@@ -9,7 +10,6 @@ module Yi.UI.Pango (start) where
 import Prelude (catch)
 
 import Control.Concurrent (yield)
-import Control.Monad (ap)
 import Data.Prototype
 import Data.IORef
 import Data.List (drop, intercalate, zip)
@@ -18,7 +18,7 @@ import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Rope as Rope
 
-import Graphics.UI.Gtk hiding (Region, Window, Action, Point, Style, Modifier)
+import Graphics.UI.Gtk hiding (Region, Window, Action, Point, Style, Modifier, on)
 import Graphics.UI.Gtk.Gdk.GC hiding (foreground)
 import qualified Graphics.UI.Gtk.Gdk.EventM as EventM
 import qualified Graphics.UI.Gtk as Gtk
@@ -85,15 +85,19 @@ data WinInfo = WinInfo
     { coreWinKey      :: WindowRef
     , coreWin         :: IORef Window
     , shownTos        :: IORef Point
-    , renderer        :: IORef (ConnectId DrawingArea)
     , lButtonPressed  :: IORef Bool 
     , insertingMode   :: IORef Bool
+    , cursorLoc       :: IORef CursorLocation
     , winLayout       :: PangoLayout
     , winMetrics      :: FontMetrics
     , textview        :: DrawingArea
     , modeline        :: Label
     , winWidget       :: Widget -- ^ Top-level widget for this window.
     }
+
+data CursorLocation 
+  = CursorLine !Gtk.Point !Gtk.Point 
+  | CursorRectangle !Int !Int !Int !Int
 
 instance Show WinInfo where
     show w = show (coreWinKey w)
@@ -137,7 +141,7 @@ start cfg ch outCh ed = catchGError (startNoMsg cfg ch outCh ed) (\(GError _dom 
 startNoMsg :: UIBoot
 startNoMsg cfg ch outCh ed = do
   logPutStrLn "startNoMsg"
-  unsafeInitGUIForThreadedRTS
+  discard unsafeInitGUIForThreadedRTS
 
   win   <- windowNew
   ico   <- loadIcon "yi+lambda-fat-32.png"
@@ -181,7 +185,7 @@ startNoMsg cfg ch outCh ed = do
   watchFont $ updateFont (configUI cfg) fontRef tc status
 
   -- use our magic threads thingy (http://haskell.org/gtk2hs/archives/2005/07/24/writing-multi-threaded-guis/)
-  timeoutAddFull (yield >> return True) priorityDefaultIdle 50
+  discard $ timeoutAddFull (yield >> return True) priorityDefaultIdle 50
 
   widgetShowAll win
 
@@ -249,7 +253,7 @@ updateTabInfo e ui tab tabInfo = do
     setWindowFocus e ui tabInfo . lookupWin . wkey . tabFocus $ tab
 
 updateWindow :: Editor -> UI -> Window -> WinInfo -> IO ()
-updateWindow e ui win wInfo = do
+updateWindow e _ui win wInfo = do
     writeIORef (coreWin wInfo) win
     writeIORef (insertingMode wInfo) (askBuffer win (findBufferWith (bufkey win) e) $ getA insertingA)
 
@@ -345,7 +349,7 @@ newWindow e ui w = do
                boxChildPacking ml := PackNatural]
       return (castToBox vb)
 
-    sig       <- newIORef =<< (v `onExpose` render e ui b (wkey w))
+    cursorRef <- newIORef (CursorRectangle 0 0 0 0)
     tosRef    <- newIORef (askBuffer w b (getMarkPointB =<< fromMark <$> askMarks))
     context   <- widgetCreatePangoContext v
     layout    <- layoutEmpty context
@@ -366,10 +370,10 @@ newWindow e ui w = do
                       , textview  = v
                       , modeline  = ml
                       , winWidget = toWidget box
-                      , renderer  = sig
                       , shownTos  = tosRef
                       , lButtonPressed = ifLButton
                       , insertingMode = imode
+                      , cursorLoc = cursorRef
                       }
     updateWindow e ui w win
 
@@ -378,38 +382,59 @@ newWindow e ui w = do
     v `on` scrollEvent        $ handleScroll        ui win
     v `on` configureEvent     $ handleConfigure     ui  -- todo: allocate event rather than configure?
     v `on` motionNotifyEvent  $ handleMove          ui win
+    discard $ v `onExpose` render ui win
     return win
 
 refresh :: UI -> Editor -> IO ()
 refresh ui e = do
-    contextId <- statusbarGetContextId (uiStatusbar ui) "global"
-    statusbarPop  (uiStatusbar ui) contextId
-    statusbarPush (uiStatusbar ui) contextId $ intercalate "  " $ statusLine e
+    postGUIAsync $ do
+       contextId <- statusbarGetContextId (uiStatusbar ui) "global"
+       statusbarPop  (uiStatusbar ui) contextId
+       discard $ statusbarPush (uiStatusbar ui) contextId $ intercalate "  " $ statusLine e
 
     updateCache ui e -- The cursor may have changed since doLayout
     cache <- readRef $ tabCache ui
     forM_ cache $ \t -> do
         wCache <- readIORef (windowCache t)
         forM_ wCache $ \w -> do
-            win <- readIORef (coreWin w)
-            let b = findBufferWith (bufkey win) e
-            -- when (not $ null $ b ^. pendingUpdatesA) $
-            do
-                sig <- readIORef (renderer w)
-                signalDisconnect sig
-                writeRef (renderer w) =<< (textview w `onExpose` render e ui b (wkey win))
-                widgetQueueDraw (textview w)
+            updateWinInfoForRendering e ui w
+            widgetQueueDraw (textview w)
 
-render :: Editor -> UI -> FBuffer -> WindowRef -> t -> IO Bool
-render e ui b ref _ev = do
-  w <- getWinInfo ui ref
+{- | Updates the 'WinInfo' with the information needed for rendering. 
+This involves:
+
+  * setting the text display attributes in the 'PangoLayout'
+
+  * calculating the cursor position.
+
+It is not necessary to set the text content, as this has already
+been done in the previous 'layout' run. 
+(See the note on 'layout' and 'refresh' in "Yi.UI.Common").
+
+We calculate this information synchronously in the 'refresh' loop,
+as the information is guaranteed to be current at this time. If
+this were instead calculating during rendering, then:
+
+  * we would need to recalculate the cursor position on every render
+
+  * the renderer is run by the Gtk event loop, so the sequencing 
+    guarantees of the note in "Yi.UI.Common" may not hold. In particular,
+    in a multithreaded environment it is possible that the text underlying 
+    the 'PangoLayout' has changed before the renderer has had a chance to
+    run, in which case the cursor position calculation will be wrong,
+    and indeed may lead to Pango assertion failures.
+-}
+updateWinInfoForRendering :: Editor -> UI -> WinInfo -> IO ()
+updateWinInfoForRendering e ui w = do
+  -- read the information
   win <- readIORef (coreWin w)
-  let tos = max 0 (regionStart (winRegion win))
-  let bos = regionEnd (winRegion win)
-  let (cur, _) = runBuffer win b pointB
+  let b = findBufferWith (bufkey win) e
+      tos = max 0 (regionStart (winRegion win))
+      bos = regionEnd (winRegion win)
+      (cur, _) = runBuffer win b pointB
 
+  -- remember the tos (for handling mouse clicks)
   writeRef (shownTos w) tos
-  drawWindow    <- widgetGetDrawWindow $ textview w
 
   -- add color attributes.
   let picture = askBuffer win b $ attributesPictureAndSelB sty (currentRegex e) (mkRegion tos bos)
@@ -429,24 +454,35 @@ render e ui b ref _ev = do
 
   layoutSetAttributes layout allAttrs
 
-  (PangoRectangle _curX _curY _curW _curH, _) <- layoutGetCursorPos layout (rel cur)
-  PangoRectangle chx chy chw chh              <- layoutIndexToPos layout (rel cur)
-  let curX = round _curX
-      curY = round _curY
-      curW = round _curW
-      curH = round _curH
+  -- calculate the cursor position
+  im <- readIORef (insertingMode w)
+  (PangoRectangle curX curY curW curH, _) <- layoutGetCursorPos layout (rel cur)
+  -- tell the input method
+  imContextSetCursorLocation (uiInput ui) (Rectangle (round curX) (round curY) (round curW) (round curH))
+  -- tell the renderer
+  writeIORef (cursorLoc w) =<<
+    if im 
+      then -- if we are inserting, we just want a line
+         return (CursorLine (round curX, round curY) (round $ curX + curW, round $ curY + curH))
+      else do -- if we aren't inserting, we want a rectangle around the current character
+         PangoRectangle chx chy chw chh <- layoutIndexToPos layout (rel cur)
+         return (CursorRectangle (round chx) (round chy) (if chw > 0 then round chw else 8) (round chh))
     
-  imContextSetCursorLocation (uiInput ui) $ Rectangle curX curY curW curH
-  
+-- | draw the 'PangoLayout' and the cursor onto the screen
+render :: UI -> WinInfo -> t -> IO Bool
+render ui w _event = do
+  drawWindow <- widgetGetDrawWindow $ textview w
   gc <- gcNew drawWindow
-  drawLayout drawWindow gc 0 0 layout
+
+  -- draw the layout
+  drawLayout drawWindow gc 0 0 (winLayout w)
 
   -- paint the cursor   
   gcSetValues gc (newGCValues { Gtk.foreground = mkCol True $ Yi.Style.foreground $ baseAttributes $ configStyle $ uiConfig ui })
-  im <- readIORef (insertingMode w)
-  if im
-     then do drawLine drawWindow gc (curX, curY) (curX + curW, curY + curH) 
-     else do drawRectangle drawWindow gc False (round chx) (round chy) (if chw > 0 then round chw else 8) (round chh)
+  cursor <- readIORef (cursorLoc w)
+  case cursor of
+    CursorLine p1 p2 -> drawLine drawWindow gc p1 p2
+    CursorRectangle rx ry rw rh -> drawRectangle drawWindow gc False rx ry rw rh
 
   return True
 
@@ -586,6 +622,10 @@ modTable = M.fromList
     , (MSuper, EventM.Super  )
     , (MHyper, EventM.Hyper  )
     ]
+
+-- | Same as Gtk.on, but discards the ConnectId
+on :: object -> Signal object callback -> callback -> IO ()
+on widget signal handler = discard $ Gtk.on widget signal handler
 
 handleButtonClick :: UI -> WindowRef -> EventM EButton Bool
 handleButtonClick ui ref = do
