@@ -16,8 +16,7 @@ import Yi.Region (Region,emptyRegion)
 import Control.Applicative
 
 ------------------------------------------------------------------------
--- | A window onto a buffer.
-
+-- | A window is a view of an activity. 
 data Window = Window {
                       isMini    :: !Bool   -- ^ regular or mini window?
                      ,bufkey    :: !BufferRef -- ^ the buffer this window opens to
