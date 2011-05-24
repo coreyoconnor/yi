@@ -188,7 +188,7 @@ library
     array, containers,  directory, process, old-locale,
     base >= 4 && < 5,
     binary == 0.5.*,
-    bytestring >=0.9.1 && <0.9.2,
+    bytestring >= 0.9.1 && < 0.9.2,
     cautious-file == 1.0.*,
     concrete-typerep == 0.1.*,
     derive >=2.4 && <2.5,
