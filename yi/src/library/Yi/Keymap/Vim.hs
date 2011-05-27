@@ -69,6 +69,7 @@ import Yi.Core
 import Yi.Eval (execEditorAction, getAllNamesInScope)
 import Yi.File
 import Yi.History
+import Yi.Layout ( Orientation(..), AddSide(..) )
 import Yi.Misc (matchingFileNames,adjBlock,adjIndent)
 import Yi.String (dropSpace,lines')
 import Yi.MiniBuffer
@@ -791,7 +792,8 @@ defKeymap = Proto template
          (fmap.second.fmap) withEditor
          [([ctrlW, char 'c'], const tryCloseE)
          ,([ctrlW, char 'o'], const closeOtherE)
-         ,([ctrlW, char 's'], const splitE)
+         ,([ctrlW, char 's'], const $ splitE Vertical AddRight)
+         ,([ctrlW, char 'v'], const $ splitE Horizontal AddRight)
          ,([ctrlW, char 'w'], nextWinE')
          ,([ctrlW, ctrlW],    nextWinE')
          ,([ctrlW, char 'W'], prevWinE')
@@ -1489,7 +1491,7 @@ TODO: use or remove
            fn "$"          = withBuffer' botB
            fn "p"          = withEditor prevBufW
            fn "prev"       = withEditor prevBufW
-           fn ('s':'p':_)  = withEditor splitE
+           fn ('s':'p':_)  = withEditor $ splitE Vertical AddRight
            fn "e"          = revertE
            fn "edit"       = revertE
            fn ('e':' ':f)  = viFnewE f
@@ -1500,7 +1502,10 @@ TODO: use or remove
            fn ('r':'e':'a':'d':' ':f) = withBuffer' . insertN =<< io (readFile $ dropSpace f)
            fn ('s':'e':'t':' ':'f':'t':'=':ft)  = do (AnyMode m) <- anyModeByName (dropSpace ft) ; withBuffer $ setMode m
            fn ('s':'e':'t':' ':'t':'a':'g':'s':'=':fps)  = withEditor $ setTagsFileList fps
-           fn ('n':'e':'w':' ':f) = withEditor splitE >> viFnewE f
+           fn ('n':'e':'w':' ':f) = do
+                b <- fileEditActivity (dropSpace f)
+                withEditor $ do
+                    addBufferEditActivityE b
            fn ('s':'/':cs) = withEditor $ viSub cs Line
            fn ('%':'s':'/':cs) = withEditor $ viSub cs Document
 
@@ -1571,6 +1576,7 @@ TODO: use or remove
 
            fn "noh"        = withEditor resetRegexE
            fn "nohlsearch" = withEditor resetRegexE
+           fn "nextLayout" = withEditor layoutManagersNextE
            fn s            = errorEditor $ "The "++show s++ " command is unknown."
 
 

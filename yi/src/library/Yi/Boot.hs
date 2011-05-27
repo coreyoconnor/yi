@@ -9,6 +9,7 @@ import System.Directory
 
 import Yi.Config
 import Yi.Editor
+import Yi.Layout
 import Yi.Keymap
 import qualified Yi.Main
 import qualified Yi.UI.Common as UI
@@ -20,7 +21,11 @@ realMain config = do
 
 showErrorsInConf :: Config -> String -> Config
 showErrorsInConf conf errs
-    = conf { initialActions = (makeAction $ splitE >> newBufferE (Left "*errors*") (R.fromString errs)) : initialActions conf }
+    = conf { initialActions = ( makeAction $ do
+                                    errorBufferID <- newBufferE (Left "*errors*") (R.fromString errs)
+                                    addBufferEditActivityE errorBufferID
+                              ) : initialActions conf 
+           }
 
 yi, yiDriver :: Config -> IO ()
 

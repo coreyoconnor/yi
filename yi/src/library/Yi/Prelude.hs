@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 
 module Yi.Prelude 
@@ -52,6 +53,7 @@ mapAlter',
 mapFromFoldable,
 module Control.Applicative,
 module Control.Category,
+module Control.DeepSeq,
 module Data.Accessor, 
 module Data.Accessor.Monad.FD.State, putA, getA, modA, 
 module Data.Bool,
@@ -69,6 +71,7 @@ print,
 putStrLn,
 replicate,
 read,
+rnfA,
 seq,
 singleton,
 snd,
@@ -95,6 +98,7 @@ import Data.Hashable(Hashable)
 import Data.Int
 import Data.Rope (Rope)
 import Control.Category
+import Control.DeepSeq
 import Control.Monad.Reader
 import Control.Applicative hiding((<$))
 import Data.Traversable 
@@ -270,4 +274,12 @@ dummyGet = return initial
 instance (Eq k, Hashable k, Binary k, Binary v) => Binary (HashMap.HashMap k v) where
     put x = put (HashMap.toList x)
     get = HashMap.fromList <$> get
+
+instance NFData a => NFData (PL.PointedList a) where
+    rnf (PL.PointedList reversedPrefix focus suffix) 
+        = rnf reversedPrefix `seq` rnf focus `seq` rnf suffix `seq` ()
+
+-- | An accessor where all set's via the accessor result in the data being reduced to normal form.
+rnfA :: NFData a => Accessor a a
+rnfA = Accessor.fromSetGet (\a _ -> rnf a `seq` a) Prelude.id
 

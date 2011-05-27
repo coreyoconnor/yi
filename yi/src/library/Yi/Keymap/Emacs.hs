@@ -17,6 +17,7 @@ import Yi.Command (shellCommandE)
 import Yi.Core
 import Yi.Dired
 import Yi.File
+import Yi.Layout ( Orientation(..), AddSide(..) )
 import Yi.MiniBuffer
 import Yi.Misc (adjBlock, adjIndent)
 import Yi.Rectangle
@@ -248,7 +249,7 @@ emacsKeys univArg =
                  , char '^'      ?>>! (repeatingArg enlargeWinE)
                  , char '0'      ?>>! closeWindow
                  , char '1'      ?>>! closeOtherE
-                 , char '2'      ?>>! splitE
+                 , char '2'      ?>>! splitE Vertical AddRight
                  , char 'h'      ?>>! selectAll
                  , char 's'      ?>>! askSaveEditor
                  , ctrlCh 'b'    ?>>! listBuffers

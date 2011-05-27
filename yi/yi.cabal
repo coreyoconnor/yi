@@ -109,6 +109,7 @@ library
     Yi.Keymap.Keys
     Yi.Keymap.Vim
     Yi.KillRing
+    Yi.ActivityGroup
     Yi.Layout
     Yi.Lexer.Abella
     Yi.Lexer.Alex
@@ -195,6 +196,7 @@ library
     data-accessor >= 0.2.1.4 && < 0.3,
     data-accessor-monads-fd == 0.2.*,
     data-accessor-template >= 0.2.1.3 && < 0.2.2,
+    deepseq >= 1.1.0.0,
     dlist >=0.4.1,
     dyre >=0.7,
     filepath>=1.1 && <1.3,
@@ -278,6 +280,10 @@ library
   if flag(vty)
     exposed-modules:
       Yi.UI.Vty
+    other-modules:
+        Yi.UI.Vty.Data
+        Yi.UI.Vty.Layout
+        Yi.UI.Vty.Render
     build-depends:
       unix-compat >=0.1 && <0.3,
       vty >= 4.7.0.0 && <5
