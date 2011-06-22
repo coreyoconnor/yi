@@ -1,13 +1,13 @@
 #!/bin/bash
 ( 
     cd yi/ && \
-        runhaskell Setup.hs configure -fnopango --user && \
+        runhaskell Setup.hs configure --enable-library-profiling --enable-executable-profiling -fvty -fnopango --user && \
         runhaskell Setup.hs build && \
         runhaskell Setup.hs install --user 
 ) && \
 ( 
     cd yi-contrib/ && \
-        runhaskell Setup.hs configure --user && \
+        runhaskell Setup.hs configure --enable-library-profiling --enable-executable-profiling --user && \
         runhaskell Setup.hs build && \
         runhaskell Setup.hs install --user 
 )

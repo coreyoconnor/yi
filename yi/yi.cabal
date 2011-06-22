@@ -223,8 +223,7 @@ library
 
   build-tools: alex
   ghc-options: -Wall -fno-warn-orphans
-  if flag(hacking)
-    ghc-prof-options: -prof -auto-all
+  ghc-prof-options: -DPROFILING_BUILD -prof -auto-all -rtsopts
 
   if !os(windows)
     build-depends:
@@ -363,4 +362,6 @@ executable yi
     yi
 
   build-tools: alex
-  ghc-options: -threaded
+  ghc-options: -Wall -fno-warn-orphans -threaded
+  ghc-prof-options: -threaded -DPROFILING_BUILD -prof -auto-all -rtsopts
+

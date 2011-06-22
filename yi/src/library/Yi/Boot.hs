@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- | Boot process of Yi, as an instanciation of Dyre
 module Yi.Boot (yi, yiDriver, reload) where
 
@@ -36,7 +37,11 @@ yi, yiDriver :: Config -> IO ()
              , Dyre.showError    = showErrorsInConf
              , Dyre.configDir    = Just . getAppUserDataDirectory $ "yi"
              , Dyre.hidePackages = ["mtl"]
+#ifdef PROFILING_BUILD
+             , Dyre.ghcOpts = ["-threaded", "-O2", "-rtsopts", "-DPROFILING_BUILD", "-prof", "-auto-all"]
+#else
              , Dyre.ghcOpts = ["-threaded", "-O2"]
+#endif
              }
 
 reload :: YiM ()
