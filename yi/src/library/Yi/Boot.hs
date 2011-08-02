@@ -23,10 +23,10 @@ realMain configs = do
     editor <- restoreBinaryState Nothing
     main configs editor
 
-showErrorsInConf :: (Config, ConsoleConfig) -> String -> Config
+showErrorsInConf :: (Config, ConsoleConfig) -> String -> (Config, ConsoleConfig)
 showErrorsInConf (conf, confcon) errs
     = ( conf { initialActions = ( makeAction $ do
-                                    errorBufferID <- newBufferE (Left "*errors*") (R.fromString errs)
+                                    errorBufferID <- stringToNewBuffer (Left "*errors*") (R.fromString errs)
                                     addBufferEditActivityE errorBufferID
                                 ) : initialActions conf 
              }
@@ -60,6 +60,8 @@ yiDriver cfg  = do
                             , Dyre.ghcOpts      = ["-threaded", "-O2"] ++ ghcOptions cfgcon
 #endif
                             }
+            in Dyre.wrapMain yiParams (finalCfg, cfgcon)
+
 reload :: YiM ()
 reload = do
     editor <- withEditor get
