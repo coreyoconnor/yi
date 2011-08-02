@@ -1,4 +1,5 @@
 #!/bin/bash
 set -e
 runhaskell Setup.hs configure --enable-executable-profiling -fvty -fnopango --user -fhacking
-runhaskell Setup.hs build
+runhaskell Setup.hs install --inplace
+

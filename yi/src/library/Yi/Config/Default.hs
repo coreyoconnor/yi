@@ -134,7 +134,9 @@ defaultConfig =
          , configUI         =  UIConfig 
            { configFontSize = Nothing
            , configFontName = Nothing
+           , configScrollWheelAmount = 4
            , configScrollStyle = Nothing
+           , configCursorStyle = FatWhenFocusedAndInserting
            , configLineWrap = True
            , configLeftSideScrollBar = True
            , configAutoHideScrollBar = False
@@ -166,6 +168,7 @@ defaultConfig =
                         AnyMode javaMode,
                         AnyMode ireaderMode,
                         AnyMode svnCommitMode,
+                        AnyMode gitCommitMode,
                         AnyMode whitespaceMode,
                         AnyMode fundamentalMode]
          , debugMode = False

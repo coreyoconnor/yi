@@ -67,7 +67,6 @@ import System.Directory (doesFileExist)
 import System.Exit
 import System.FilePath
 import System.IO (Handle, hWaitForInput, hPutStr)
-import qualified System.IO.UTF8 as UTF8
 import System.PosixCompat.Files
 import System.Process (terminateProcess, getProcessExitCode, ProcessHandle)
 

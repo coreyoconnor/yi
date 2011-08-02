@@ -27,6 +27,8 @@ With the Haskell Platform installed, yi should be installed with cabal-install:
     $ cabal update
     $ cabal install yi
 
+On Linux systems, you'll probably need ncurses development headers for the Vty frontend. On Ubuntu, you'll need to install the `libncurses5-dev` package.
+
 You can specify frontends to compile, also:
 
     $ cabal install yi -fvty -fpango
@@ -55,6 +57,18 @@ To get the git version,
     $ git clone git://github.com/yi-editor/yi.git
 
 (There may be more repositories in the future, as yi is split more.)
+
+## Generating documentation
+
+Due to [a cabal bug][cabal656], documentation won't be generated when running 'cabal install yi'. Use the following workaround:
+
+    $ cabal install -fdochack yi
+
+This command will install the yi library with documentation, but not the yi executable. To install the executable, simply run
+
+    $ cabal install yi
+
+after the documentation has been generated.
 
 ## Reporting Bugs
 
@@ -126,3 +140,4 @@ Of course, feel free to adjust those rules to your needs. If you go for the prof
 [yi-devel]: http://groups.google.com/group/yi-devel
 [dyre]: http://hackage.haskell.org/package/dyre
 [userconfigs]: https://github.com/yi-editor/yi/tree/master/yi-contrib/src/Yi/Config/Users
+[cabal656]: http://hackage.haskell.org/trac/hackage/ticket/656

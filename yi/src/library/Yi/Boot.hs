@@ -3,47 +3,63 @@
 module Yi.Boot (yi, yiDriver, reload) where
 
 import qualified Config.Dyre as Dyre
+import qualified Config.Dyre.Options as Dyre
 import Config.Dyre.Relaunch
 import Control.Monad.State
 import qualified Data.Rope as R
 import System.Directory
+import System.Environment
+import System.Exit
 
 import Yi.Config
 import Yi.Editor
 import Yi.Layout
 import Yi.Keymap
-import qualified Yi.Main
+import Yi.Main
 import qualified Yi.UI.Common as UI
 
-realMain :: Config -> IO ()
-realMain config = do
+realMain :: (Config, ConsoleConfig) -> IO ()
+realMain configs = do
     editor <- restoreBinaryState Nothing
-    Yi.Main.main config editor
+    main configs editor
 
-showErrorsInConf :: Config -> String -> Config
-showErrorsInConf conf errs
-    = conf { initialActions = ( makeAction $ do
+showErrorsInConf :: (Config, ConsoleConfig) -> String -> Config
+showErrorsInConf (conf, confcon) errs
+    = ( conf { initialActions = ( makeAction $ do
                                     errorBufferID <- newBufferE (Left "*errors*") (R.fromString errs)
                                     addBufferEditActivityE errorBufferID
-                              ) : initialActions conf 
-           }
+                                ) : initialActions conf 
+             }
+      , confcon
+      )
 
 yi, yiDriver :: Config -> IO ()
+yi = yiDriver
 
-(yiDriver, yi) = (Dyre.wrapMain yiParams, Dyre.wrapMain yiParams)
-  where yiParams = Dyre.defaultParams
-             { Dyre.projectName  = "yi"
-             , Dyre.realMain     = realMain
-             , Dyre.showError    = showErrorsInConf
-             , Dyre.configDir    = Just . getAppUserDataDirectory $ "yi"
-             , Dyre.hidePackages = ["mtl"]
+yiDriver cfg  = do
+    args <- Dyre.withDyreOptions Dyre.defaultParams getArgs 
+    -- we do the arg processing before dyre, so we can extract '--ghc-option=' and '--help' and so on.
+    case do_args cfg args of
+        Left (Err err code) ->
+          do putStrLn err
+             exitWith code
+        Right (finalCfg, cfgcon) -> 
+            let yiParams = Dyre.defaultParams
+                            { Dyre.projectName  = "yi"
+                            , Dyre.realMain     = realMain
+                            , Dyre.showError    = showErrorsInConf
+                            , Dyre.configDir    = Just . getAppUserDataDirectory $ "yi"
+                            , Dyre.hidePackages = ["mtl"]
 #ifdef PROFILING_BUILD
-             , Dyre.ghcOpts = ["-threaded", "-O2", "-rtsopts", "-DPROFILING_BUILD", "-prof", "-auto-all"]
+                            , Dyre.ghcOpts      = [ "-threaded", "-O2"
+                                                  , "-rtsopts"
+                                                  , "-DPROFILING_BUILD"
+                                                  , "-prof", "-auto-all"
+                                                  ] ++ ghcOptions cfgcon
 #else
-             , Dyre.ghcOpts = ["-threaded", "-O2"]
+                            , Dyre.ghcOpts      = ["-threaded", "-O2"] ++ ghcOptions cfgcon
 #endif
-             }
-
+                            }
 reload :: YiM ()
 reload = do
     editor <- withEditor get
