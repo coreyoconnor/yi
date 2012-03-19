@@ -181,21 +181,21 @@ isearchKeymap dir =
 queryReplaceE :: YiM ()
 queryReplaceE = do
     withMinibufferFree "Replace:" $ \replaceWhat -> do
-    withMinibufferFree "With:" $ \replaceWith -> do
-    b <- gets currentBuffer
-    win <- getA currentWindowA
-    let replaceKm = choice [char 'n' ?>>! qrNext win b re,
-                            char '!' ?>>! qrReplaceAll win b re replaceWith,
-                            oneOf [char 'y', char ' '] >>! qrReplaceOne win b re replaceWith,
-                            oneOf [char 'q', ctrl (char 'g')] >>! qrFinish
-                           ]
-        Right re = makeSearchOptsM [] replaceWhat
-    withEditor $ do
-       setRegexE re
-       discard $ spawnMinibufferE
-            ("Replacing " ++ replaceWhat ++ " with " ++ replaceWith ++ " (y,n,q,!):")
-            (const replaceKm)
-       qrNext win b re
+        withMinibufferFree "With:" $ \replaceWith -> do
+            b <- gets currentBuffer
+            win <- getA currentWindowA
+            let replaceKm = choice [char 'n' ?>>! qrNext win b re,
+                                    char '!' ?>>! qrReplaceAll win b re replaceWith,
+                                    oneOf [char 'y', char ' '] >>! qrReplaceOne win b re replaceWith,
+                                    oneOf [char 'q', ctrl (char 'g')] >>! qrFinish
+                                   ]
+                Right re = makeSearchOptsM [] replaceWhat
+            withEditor $ do
+               setRegexE re
+               discard $ spawnMinibufferE
+                    ("Replacing " ++ replaceWhat ++ " with " ++ replaceWith ++ " (y,n,q,!):")
+                    (const replaceKm)
+               qrNext win b re
 
 executeExtendedCommandE :: YiM ()
 executeExtendedCommandE = withMinibuffer "M-x" (const getAllNamesInScope) execEditorAction
@@ -269,7 +269,7 @@ scrollUpE a = case a of
 
 switchBufferE :: YiM ()
 switchBufferE = do
-    openBufs <- fmap bufkey . toList <$> getA windowsA
+    openBufs <- fmap bufkey <$> gets windows
     names <- withEditor $ do bs <- fmap bkey <$> getBufferStack
                              let choices = (bs \\ openBufs) ++ openBufs -- put the open buffers at the end.
                              prefix <- gets commonNamePrefix

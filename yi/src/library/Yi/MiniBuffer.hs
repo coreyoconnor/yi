@@ -18,11 +18,14 @@ import Data.List (isInfixOf)
 import qualified Data.List.PointedList.Circular as PL
 import Data.Maybe
 import Data.String (IsString)
+import Yi.ActivityGroup (groupActivitiesA)
 import Yi.Config
 import Yi.Core
 import Yi.History
 import Yi.Completion (infixMatch, prefixMatch, containsMatch', completeInList, completeInList')
 import Yi.Style (defaultStyle)
+import Yi.Tab ( currentActivityA)
+import Yi.Window (wkey)
 import qualified Yi.Core as Editor
 import qualified Data.Rope as R
 
@@ -54,7 +57,7 @@ spawnMinibufferE prompt kmMod =
        -- If the minibuffer is moved then when the minibuffer is deleted the window brought
        -- into focus may not be the window that spawned the minibuffer.
        w <- newWindowE True b
-       modA windowsA (PL.insertRight w)
+       modA (groupActivitiesA . currentActivityA . currentTabA) (PL.insertRight w)
        return b
 
 -- | @withMinibuffer prompt completer act@: open a minibuffer with @prompt@. Once
@@ -104,7 +107,7 @@ withMinibufferGen proposal getHint prompt completer act = do
       -- ^ Read contents of current buffer (which should be the minibuffer), and
       -- apply it to the desired action
       closeMinibuffer = closeBufferAndWindowE >>
-                        modA windowsA (fromJust . PL.find initialWindow)
+                        focusWindowE (wkey initialWindow)
       showMatchings = showMatchingsOf =<< withBuffer elemsB
       showMatchingsOf userInput = withEditor . printStatus =<< fmap withDefaultStyle (getHint userInput)
       withDefaultStyle msg = (msg, defaultStyle)

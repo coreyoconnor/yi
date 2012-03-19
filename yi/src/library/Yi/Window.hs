@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DeriveDataTypeable, TemplateHaskell, GeneralizedNewtypeDeriving #-}
 
 --
@@ -14,13 +15,13 @@ import Yi.Buffer.Basic (BufferRef, WindowRef)
 import Yi.Region (Region,emptyRegion)
 
 ------------------------------------------------------------------------
--- | A window onto a buffer.
-
+-- | A window is a view of an activity. 
 data Window = Window {
                       isMini    :: !Bool   -- ^ regular or mini window?
                      ,bufkey    :: !BufferRef -- ^ the buffer this window opens to
                      ,bufAccessList :: ![BufferRef] -- ^ list of last accessed buffers (former bufKeys). Last accessed one is first element
-                     ,height    :: Int    -- ^ height of the window (in number of screen lines displayed)
+                     ,height    :: Int    -- ^ height of the window (integer number of Ems available vertically for display)
+                     ,width     :: Int    -- ^ width of the window (integer number of Ems available horizontally for display)
                      ,winRegion    :: Region -- ^ view area.
                                               -- note that the top point is also available as a buffer mark.
                      ,wkey      :: !WindowRef -- ^ identifier for the window (for UI sync)
@@ -33,16 +34,22 @@ data Window = Window {
                      }
         deriving (Typeable)
 
+instance NFData Window where
+    rnf (Window {isMini, bufkey, bufAccessList, height, width, winRegion, wkey, actualLines}) 
+        =       rnf isMini 
+          `seq` rnf bufkey 
+          `seq` rnf bufAccessList 
+          `seq` rnf height 
+          `seq` rnf width 
+          `seq` rnf winRegion 
+          `seq` rnf wkey
+          `seq` rnf actualLines
+
 instance Binary Window where
-    put (Window mini bk bl _h _rgn key lns) = put mini >> put bk >> put bl >> put key >> put lns
+    put (Window mini bk bl _h _w _rgn key lns) = put mini >> put bk >> put bl >> put key >> put lns
     get = Window <$> get <*> get <*> get
-                   <*> return 0 <*> return emptyRegion
+                   <*> return 0 <*> return 0 <*> return emptyRegion
                    <*> get <*> get
-
-
--- | Get the identification of a window.
-winkey :: Window -> (Bool, BufferRef)
-winkey w = (isMini w, bufkey w)
 
 instance Show Window where
     show w = "Window to " ++ show (bufkey w) 
@@ -60,5 +67,5 @@ pointInWindow point win = tospnt win <= point && point <= bospnt win
 
 -- | Return a "fake" window onto a buffer.
 dummyWindow :: BufferRef -> Window
-dummyWindow b = Window False b [] 0 emptyRegion initial 0
+dummyWindow b = Window False b [] 0 0 emptyRegion initial 0
 

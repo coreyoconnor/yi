@@ -10,6 +10,7 @@ module Yi.Editor where
 
 import Control.Monad.RWS hiding (get, put, mapM, forM_)
 import Data.Accessor.Basic (fromSetGet)
+import qualified Data.Accessor.Basic as Accessor
 import Data.Accessor.Template
 import Data.Binary
 import Data.DeriveTH
@@ -25,6 +26,7 @@ import Yi.Dynamic
 import Yi.Event (Event)
 import Yi.Interact as I
 import Yi.KillRing
+import Yi.ActivityGroup
 import Yi.Layout
 import Yi.Prelude
 import Yi.Style (StyleName, defaultStyle)
@@ -32,10 +34,12 @@ import Yi.Tab
 import Yi.Window
 import qualified Data.Rope as R
 import qualified Data.DelayList as DelayList
-import qualified Data.List.PointedList as PL (atEnd)
+import qualified Data.List.PointedList as PL (atEnd, atStart)
 import qualified Data.List.PointedList.Circular as PL
 import qualified Data.Map as M
 import {-# source #-} Yi.Keymap (extractTopKeymap)
+
+import qualified Control.Monad.State as State
 
 type Status = ([String],StyleName)
 type Statuses = DelayList.DelayList Status
@@ -46,9 +50,9 @@ data Editor = Editor {
                                                     -- Invariant: never empty
                                                     -- Invariant: first buffer is the current one.
        ,buffers       :: !(M.Map BufferRef FBuffer)
-       ,refSupply     :: !Int  -- ^ Supply for buffer, window and tab ids.
+       ,refSupply     :: !Int  -- ^ Supply for buffer, activity layouts, window, activity, and tab ids.
 
-       ,tabs_          :: !(PL.PointedList Tab) -- ^ current tab contains the visible windows pointed list.
+       ,tabs_          :: !(PL.PointedList Tab) -- ^ current tab contains the currently visible activities.
 
        ,dynamic       :: !DynamicValues              -- ^ dynamic components
 
@@ -106,11 +110,19 @@ instance MonadEditor EditorM where
 
 -- | The initial state
 emptyEditor :: Editor
-emptyEditor = Editor {
+emptyEditor = flip State.evalState (0 :: Int) $ do
+    let inc = State.get >>= (\(v :: Int) -> State.put (v+1) >> return v)
+    buf <- newB <$> (BufferRef <$> inc) <*> pure (Left "console") <*> pure (R.fromString "")
+    consoleWKey <- inc
+    let win = (dummyWindow (bkey buf)) { wkey = WindowRef consoleWKey, isMini = False }
+    activityGroup <- makeActivityGroup1 <$> (ActivityGroupRef <$> inc) <*> pure win
+    tab <- makeTab1 <$> inc <*> pure activityGroup
+    nextRefValue <- State.get
+    return $ Editor {
         buffers      = M.singleton (bkey buf) buf
        ,tabs_        = PL.singleton tab
        ,bufferStack  = [bkey buf]
-       ,refSupply    = 3
+       ,refSupply    = nextRefValue
        ,currentRegex = Nothing
        ,searchDirection = Forward
        ,dynamic      = initial
@@ -120,9 +132,6 @@ emptyEditor = Editor {
        ,maxStatusHeight = 1
        ,onCloseActions = M.empty
        }
-        where buf = newB 0 (Left "console") (R.fromString "")
-              win = (dummyWindow (bkey buf)) {wkey = WindowRef 1, isMini = False}
-              tab = makeTab1 2 win
 
 -- ---------------------------------------------------------------------
 
@@ -131,15 +140,22 @@ runEditor cfg f e = let (a, e',()) = runRWS (fromEditorM f) cfg e in (e',a)
 
 $(nameDeriveAccessors ''Editor (\n -> Just (n ++ "A")))
 
+windows :: Editor -> [ Window ]
+windows e = concatMap tabWindows $ Accessor.get tabsA e
 
-windows :: Editor -> PL.PointedList Window
-windows e = e ^. windowsA
+windowsWithFocus :: Editor -> [ (Window, Bool) ]
+windowsWithFocus e =
+    let currentWin = Accessor.get currentWindowA e
+    in map (\w -> (w, w == currentWin) ) $ windows e
 
-windowsA :: Accessor Editor (PL.PointedList Window)
-windowsA =  tabWindowsA . currentTabA
+modifyWindowsE :: ( Window -> Window ) -> EditorM ()
+modifyWindowsE f = modA tabsA ( fmap ( mapTabWindows f ) )
+    
+modifyWindows :: (Window -> Window) -> Editor -> Editor
+modifyWindows f = Accessor.modify tabsA ( fmap ( mapTabWindows f ) )
 
 tabsA :: Accessor Editor (PL.PointedList Tab)
-tabsA = tabs_A . fixCurrentBufferA_
+tabsA = rnfA . tabs_A . fixCurrentBufferA_
 
 currentTabA :: Accessor Editor Tab
 currentTabA = PL.focusA . tabsA
@@ -184,9 +200,6 @@ insertBuffer b = modify $
 forceFold1 :: (Foldable t) => t a -> t a
 forceFold1 x = foldr seq x x
 
-forceFoldTabs :: Foldable t => t Tab -> t Tab
-forceFoldTabs x = foldr (seq . forceTab) x x
-
 -- | Delete a buffer (and release resources associated with it).
 deleteBuffer :: BufferRef -> EditorM ()
 deleteBuffer k = do
@@ -205,22 +218,24 @@ deleteBuffer k = do
                     Just action -> action
   -- Now try deleting the buffer. Checking, once again, that it is not the last buffer.
   bs <- gets bufferStack
-  ws <- getA windowsA
+  ws <- gets windows
   case bs of
       (b0:nextB:_) -> do
           let pickOther w = if bufkey w == k then w {bufkey = other} else w
-              visibleBuffers = fmap bufkey $ toList ws
+              visibleBuffers = fmap bufkey ws
               other = head $ (bs \\ visibleBuffers) ++ (delete k bs)
           when (b0 == k) $ do
               -- we delete the currently selected buffer: the next buffer will become active in
               -- the main window, therefore it must be assigned a new window.
               switchToBufferE nextB
+          -- all windows open on that buffer must switch to another buffer.
+          -- remove the key of the deleted buffer from all bufAccessList data members.
+          modifyWindowsE (\w -> let w' = pickOther w
+                                in w' { bufAccessList = forceFold1 . filter (k/=) $ bufAccessList w' }
+                         )
           modify $ \e -> e {bufferStack = forceFold1 $ filter (k /=) $ bufferStack e,
-                            buffers = M.delete k (buffers e),
-                            tabs_ = forceFoldTabs $ fmap (mapWindows pickOther) (tabs_ e)
-                            -- all windows open on that buffer must switch to another buffer.
+                            buffers = M.delete k (buffers e)
                            }
-          modA windowsA (fmap (\w -> w { bufAccessList = forceFold1 . filter (k/=) $ bufAccessList w }))
       _ -> return () -- Don't delete the last buffer.
 
 -- | Return the buffers we have, /in no particular order/
@@ -263,11 +278,12 @@ getBufferWithName bufName = do
     [] -> fail ("Buffer not found: " ++ bufName)
     (b:_) -> return b
 
--- | Make all buffers visible by splitting the current window list.
+-- | Make all buffers visible by creating a new view in the current tab onto a buffer editing activity.
 -- FIXME: rename to displayAllBuffersE; make sure buffers are not open twice.
 openAllBuffersE :: EditorM ()
-openAllBuffersE = do bs <- gets bufferSet
-                     forM_ bs $ (modA windowsA . PL.insertRight =<<) . newWindowE False . bkey
+openAllBuffersE = do 
+    bs <- gets bufferSet
+    forM_ bs $ addBufferEditActivityE . bkey
 
 ------------------------------------------------------------------------
 
@@ -314,7 +330,7 @@ withBuffer0 f = do
   withGivenBufferAndWindow0 w (bufkey w) f
 
 currentWindowA :: Accessor Editor Window
-currentWindowA = PL.focusA . windowsA
+currentWindowA = PL.focusA . groupActivitiesA . currentActivityA . currentTabA
 
 -- | Return the current buffer
 currentBuffer :: Editor -> BufferRef
@@ -451,7 +467,7 @@ alternateBufferE n = do
 
 -- | Create a new zero size window on a given buffer
 newZeroSizeWindow ::Bool -> BufferRef -> WindowRef -> Window
-newZeroSizeWindow mini bk ref = Window mini bk [] 0 emptyRegion ref 0
+newZeroSizeWindow mini bk ref = Window mini bk [] 0 0 emptyRegion ref 0
 
 -- | Create a new window onto the given buffer.
 newWindowE :: Bool -> BufferRef -> EditorM Window
@@ -460,13 +476,9 @@ newWindowE mini bk = newZeroSizeWindow mini bk . WindowRef <$> newRef
 -- | Attach the specified buffer to the current window
 switchToBufferE :: BufferRef -> EditorM ()
 switchToBufferE bk = do
-    modA (PL.focusA . windowsA) (\w -> 
+    modA currentWindowA (\w -> 
            w { bufkey = bk, 
                bufAccessList = forceFold1 $ ((bufkey w):) . filter (bk/=) $ bufAccessList w })
-
--- | Attach the specified buffer to some other window than the current one
-switchToBufferOtherWindowE :: BufferRef -> EditorM ()
-switchToBufferOtherWindowE b = shiftOtherWindow >> switchToBufferE b
 
 -- | Switch to the buffer specified as parameter. If the buffer name is empty, switch to the next buffer.
 switchToBufferWithNameE :: String -> EditorM ()
@@ -498,39 +510,59 @@ closeBufferAndWindowE = do
 
 -- | Rotate focus to the next window
 nextWinE :: EditorM ()
-nextWinE = modA windowsA PL.next
+nextWinE = do
+    -- If the current focus in the current activity group is at the end 
+    isAtEnd <- PL.atEnd <$> getA (groupActivitiesA . currentActivityA . currentTabA)
+    if isAtEnd
+    -- then move to the next activity group and set the focus to the first of the activities
+        then do
+            modA (tabActivitiesA . currentTabA) PL.next
+            modA (groupActivitiesA . currentActivityA . currentTabA) (\as -> fromJust $! PL.move 0 as)
+    -- else move to the next focus in the activity group
+        else modA (groupActivitiesA . currentActivityA . currentTabA) PL.next
 
 -- | Rotate focus to the previous window
 prevWinE :: EditorM ()
-prevWinE = modA windowsA PL.previous
+prevWinE = do
+    -- If the current focus in the current activity group is at the start
+    isAtStart <- PL.atStart <$> getA (groupActivitiesA . currentActivityA . currentTabA)
+    if isAtStart
+    -- then move to the previous activity group and set the focus to the last of the activities
+        then do
+            modA (tabActivitiesA . currentTabA) PL.previous
+            modA (groupActivitiesA . currentActivityA . currentTabA) (\as -> fromJust $! PL.move (PL.length as - 1) as)
+    -- else move to the next focus in the activity group
+        else modA (groupActivitiesA . currentActivityA . currentTabA) PL.previous
 
--- | Swaps the focused window with the first window. Useful for layouts such as 'HPairOneStack', for which the first window is the largest.
+-- | Swaps the focused activity group with the first activity group. Useful for layouts such as
+-- 'HPairOneStack', for which the first activity group has the most screen space.
 swapWinWithFirstE :: EditorM ()
-swapWinWithFirstE = modA windowsA (swapFocus (fromJust . PL.move 0))
+swapWinWithFirstE = modA (tabActivitiesA . currentTabA) (swapFocus (fromJust . PL.move 0))
 
--- | Moves the focused window to the first window, and moves all other windows down the stack.
+-- | Moves the focused activity group to the first window, and moves all other groups down the
+-- stack.
 pushWinToFirstE :: EditorM ()
-pushWinToFirstE = modA windowsA pushToFirst
+pushWinToFirstE = modA (tabActivitiesA . currentTabA) pushToFirst
   where
-      pushToFirst ws = case PL.delete ws of
-          Nothing -> ws
-          Just ws' -> PL.insertLeft (ws ^. PL.focusA) (fromJust $ PL.move 0 ws')
+      pushToFirst ags = case PL.delete ags of
+          Nothing -> ags
+          Just ags' -> PL.insertLeft (ags ^. PL.focusA) (fromJust $ PL.move 0 ags')
 
 -- | Swap focused window with the next one
 moveWinNextE :: EditorM ()
-moveWinNextE = modA windowsA (swapFocus PL.next)
+moveWinNextE = modA (tabActivitiesA . currentTabA) (swapFocus PL.next)
 
 -- | Swap focused window with the previous one
 moveWinPrevE :: EditorM ()
-moveWinPrevE = modA windowsA (swapFocus PL.previous)
+moveWinPrevE = modA (tabActivitiesA . currentTabA) (swapFocus PL.previous)
 
 -- | A "fake" accessor that fixes the current buffer after a change of the current
 -- window. 
 -- Enforces invariant that top of buffer stack is the buffer of the current window.
 fixCurrentBufferA_ :: Accessor Editor Editor
 fixCurrentBufferA_ = fromSetGet (\new _old -> let 
-    ws = windows new
-    b = findBufferWith (bufkey $ PL.focus ws) new
+    focusedWin = Accessor.get (PL.focusA . groupActivitiesA . currentActivityA . currentTabA) new
+    b = findBufferWith (bufkey focusedWin) new
     newBufferStack = nub (bkey b : bufferStack new)
     -- make sure we do not hold to old versions by seqing the length.
     in length newBufferStack `seq` new { bufferStack = newBufferStack  } ) id
@@ -541,7 +573,7 @@ fixCurrentBufferA_ = fromSetGet (\new _old -> let
 fixCurrentWindow :: EditorM ()
 fixCurrentWindow = do
     b <- gets currentBuffer
-    modA (PL.focusA . windowsA) (\w -> w {bufkey = b})
+    modA (PL.focusA . groupActivitiesA . currentActivityA . currentTabA) (\w -> w {bufkey = b})
 
 withWindowE :: Window -> BufferM a -> EditorM a
 withWindowE w = withGivenBufferAndWindow0 w (bufkey w)
@@ -554,39 +586,51 @@ findWindowWith k e =
 windowsOnBufferE :: BufferRef -> EditorM [Window]
 windowsOnBufferE k = do
   ts <- getA tabsA
-  return $ concatMap (concatMap (\win -> if (bufkey win == k) then [win] else []) . (^. tabWindowsA)) ts
+  return $ concatMap (concatMap (\win -> if (bufkey win == k) then [win] else []) . tabWindows) ts
 
 -- | bring the editor focus the window with the given key.
 --
 -- Fails if no window with the given key is found.
 focusWindowE :: WindowRef -> EditorM ()
 focusWindowE k = do
-    -- Find the tab index and window index
+    -- Find the tab index, the activity group, and window index
+    -- by iterating through all the values until a window with the given ID is found.
     ts <- getA tabsA
-    let check (False, i) win = if wkey win == k 
+    let searchWins (False, i) win = if wkey win == k 
                                     then (True, i)
                                     else (False, i + 1)
-        check r@(True, _) _win = r
+        searchWins r@(True, _) _win = r
 
-        searchWindowSet (False, tabIndex, _) ws = 
-            case foldl check (False, 0) (ws ^. tabWindowsA) of
-                (True, winIndex) -> (True, tabIndex, winIndex)
-                (False, _)       -> (False, tabIndex + 1, 0)
-        searchWindowSet r@(True, _, _) _ws = r
+        searchActivities (False, activityIndex, _) ag = 
+            case foldl searchWins (False, 0) (ag ^. groupActivitiesA) of
+                (True, winIndex) -> (True, activityIndex, winIndex)
+                (False, _)       -> (False, activityIndex + 1, 0)
+        searchActivities r@(True, _, _) _ag = r
 
-    case foldl searchWindowSet  (False, 0, 0) ts of
-        (False, _, _) -> fail $ "No window with key " ++ show wkey ++ "found. (focusWindowE)"
-        (True, tabIndex, winIndex) -> do
+        searchTabs (False, tabIndex, _, _) tab =
+            case foldl searchActivities (False, 0, 0) (tab ^. tabActivitiesA) of
+                (True, activityIndex, winIndex) -> (True, tabIndex, activityIndex, winIndex)
+                (False, _, _)                   -> (False, tabIndex + 1, 0, 0)
+        searchTabs r@(True, _, _, _) _tab = r
+
+    case foldl searchTabs  (False, 0, 0, 0) ts of
+        (False, _, _, _) -> fail $ "No window with key " ++ show wkey ++ "found. (focusWindowE)"
+        (True, tabIndex, activityIndex, winIndex) -> do
             putA tabsA (fromJust $ PL.move tabIndex ts) 
-            modA windowsA (\ws -> fromJust $ PL.move winIndex ws) 
+            modA (tabActivitiesA . currentTabA) (\as -> fromJust $! PL.move activityIndex as)
+            modA (groupActivitiesA . currentActivityA . currentTabA) (\as -> fromJust $! PL.move winIndex as)
 
--- | Split the current window, opening a second window onto current buffer.
--- TODO: unfold newWindowE here?
-splitE :: EditorM ()
-splitE = do
+-- | Split the current activity according to the provided orientation. Creates a new view onto the
+-- activity grouped with the current activity. The new view will be placed according to AddSide and
+-- will become the new focus.
+--
+-- "split the view into a <orientation> group of views"
+splitE :: Orientation -> AddSide -> EditorM ()
+splitE o addSide = do
   b <- gets currentBuffer
   w <- newWindowE False b
-  modA windowsA (PL.insertRight w)
+  dividerRef <- newRef
+  modA (currentActivityA . currentTabA) (addView w o addSide dividerRef)
 
 -- | Cycle to the next layout manager, or the first one if the current one is nonstandard.
 layoutManagersNextE :: EditorM ()
@@ -632,8 +676,11 @@ newTabE :: EditorM ()
 newTabE = do
     bk <- gets currentBuffer
     win <- newWindowE False bk
-    ref <- newRef
-    modA tabsA (PL.insertRight (makeTab1 ref win))
+    tabRef <- newRef
+    agRef <- newRef
+    let theTab = makeTab1 tabRef theAG
+        theAG = makeActivityGroup1 (ActivityGroupRef agRef) win
+    modA tabsA (PL.insertRight theTab)
 
 -- | Moves to the next tab in the round robin set of tabs
 nextTabE :: EditorM ()
@@ -662,27 +709,57 @@ deleteTabE = modA tabsA $ maybe failure id . deleteTab
                            True ->  PL.deleteLeft tabs
                            False -> PL.deleteRight tabs
 
--- | Close the current window. If there is only one tab open and the tab 
--- contains only one window then do nothing.
+-- | Adds a buffer editing activity to the current tab.
+addBufferEditActivityE :: BufferRef -> EditorM ()
+addBufferEditActivityE bref = do
+    win <- newWindowE False bref
+    aref <- newRef
+    let a = makeActivityGroup1 (ActivityGroupRef aref) win 
+    modA currentTabA (addActivity AddRight a)
+    
+-- | Close the current view as long as there is another view to switch focus to.
+-- If the current view is the only view in the editor then do nothing.
 tryCloseE :: EditorM ()
 tryCloseE = do
-    n <- getsA windowsA PL.length
-    if n == 1
-        -- Could the Maybe response from deleteLeft be used instead of the
-        -- initial 'if'?
-        then modA tabsA (fromJust . PL.deleteLeft)
-        else modA windowsA (fromJust . PL.deleteLeft)
+    ag <- getA $ currentActivityA . currentTabA
+    case deleteFocusedView ag of
+        -- if deleting the focused view would result in an empty activity then delete the activity.
+        Nothing -> do
+            ags <- getA $ tabActivitiesA . currentTabA
+            case PL.deleteLeft ags of
+                -- if deleting the activity would result in an empty tab then delete the tab.
+                Nothing -> do
+                    tabs <- getA $ tabsA
+                    case PL.deleteLeft tabs of
+                        -- if deleting the tab would result in no tabs then do nothing.
+                        Nothing -> return ()
+                        -- otherwise commit the deletion of the tab.
+                        Just tabs' -> putA tabsA tabs'
+                -- otherwise commit the deletion of the activity
+                Just ags' -> putA (tabActivitiesA . currentTabA) ags'
+        -- otherwise commit the deletion of the activity view
+        Just ag' -> putA ( currentActivityA . currentTabA ) ag'
 
--- | Make the current window the only window on the screen
+-- | Make the current view the only view in the current activity.
+closeOtherViewsE :: EditorM ()
+closeOtherViewsE = modA (currentActivityA . currentTabA) deleteOtherViews
+
+-- | Make the current activity the only activity in the current tab.
+closeOtherActivitiesE :: EditorM ()
+closeOtherActivitiesE = modA (tabActivitiesA . currentTabA) PL.deleteOthers
+
+-- | close all other views and activities.
 closeOtherE :: EditorM ()
-closeOtherE = modA windowsA PL.deleteOthers
+closeOtherE = do
+    closeOtherViewsE
+    closeOtherActivitiesE
 
 -- | Switch focus to some other window. If none is available, create one.
 shiftOtherWindow :: MonadEditor m => m ()
 shiftOtherWindow = liftEditor $ do
-  len <- getsA windowsA PL.length
+  len <- getsA (groupActivitiesA . currentActivityA . currentTabA) PL.length
   if (len == 1) 
-    then splitE
+    then splitE Vertical AddRight
     else nextWinE
 
 -- | Execute the argument in the context of an other window. Create
@@ -694,6 +771,10 @@ withOtherWindow f = do
   x <- f
   liftEditor prevWinE
   return x
+
+-- | Attach the specified buffer to some other window than the current one
+switchToBufferOtherWindowE :: BufferRef -> EditorM ()
+switchToBufferOtherWindowE b = shiftOtherWindow >> switchToBufferE b
 
 acceptedInputs :: EditorM [String]
 acceptedInputs = do

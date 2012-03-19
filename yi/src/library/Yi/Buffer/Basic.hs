@@ -14,6 +14,10 @@ data Direction = Backward
                | Forward
                  deriving (Eq,Ord,Typeable,Show,Bounded,Enum)
 
+instance NFData Direction where
+    rnf Backward = ()
+    rnf Forward = ()
+
 $(derive makeBinary ''Direction)
 
 reverseDir :: Direction -> Direction
@@ -34,11 +38,12 @@ directionElim Backward b _ = b
 directionElim Forward  _ f = f
 
 -- | A mark in a buffer
-newtype Mark = Mark {markId::Int} deriving (Eq, Ord, Show, Typeable, Binary)
+newtype Mark = Mark {markId::Int} 
+    deriving (Eq, Ord, Show, Typeable, Binary, NFData)
 
 -- | Reference to a buffer.
 newtype BufferRef = BufferRef Int
-    deriving (Eq, Ord, Typeable, Binary)
+    deriving (Eq, Ord, Typeable, Binary, NFData)
 deriving instance Num BufferRef
 
 instance Show BufferRef where
@@ -46,7 +51,7 @@ instance Show BufferRef where
 
 -- | A point in a buffer
 newtype Point = Point {fromPoint :: Int}           -- offset in the buffer (#codepoints, NOT bytes)
-    deriving (Eq, Ord, Enum, Bounded, Typeable, Binary, Ix)
+    deriving (Eq, Ord, Enum, Bounded, Typeable, Binary, Ix, NFData)
 
 deriving instance Num Point
 deriving instance Real Point
@@ -56,7 +61,7 @@ instance Show Point where
 
 -- | Size of a buffer region
 newtype Size = Size {fromSize :: Int}             -- size in bytes (#bytes, NOT codepoints)
-    deriving (Show, Eq, Ord, Num, Enum, Real, Integral, Binary)
+    deriving (Show, Eq, Ord, Num, Enum, Real, Integral, Binary, NFData)
 
 instance SemiNum Point Size where
     Point p +~ Size s = Point (p + s)
@@ -68,7 +73,7 @@ fromString = R.fromString
 
 -- | Window references
 newtype WindowRef = WindowRef { unWindowRef :: Int }
-  deriving(Eq, Ord, Enum, Show, Typeable, Binary)
+  deriving(Eq, Ord, Enum, Show, Typeable, Binary, NFData)
 
 instance Initializable WindowRef where initial = WindowRef (-1)
 

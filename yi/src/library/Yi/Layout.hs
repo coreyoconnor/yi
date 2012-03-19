@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DeriveDataTypeable, ExistentialQuantification, DeriveFunctor, TupleSections, ViewPatterns #-}
 {-# OPTIONS_GHC -funbox-strict-fields #-} -- we might as well unbox our Ints.
 
@@ -28,6 +30,8 @@ module Yi.Layout
     -- ** Layouts as rectangles
     Rectangle(..),
     layoutToRectangles,
+    integerClampRects,
+    integerClampRect,
     -- ** Transposing things
     Transposable(..),
     Transposed(..),
@@ -39,15 +43,19 @@ module Yi.Layout
     stack,
     evenStack,
     runLayoutM,
+    AddSide(..),
+    splitAdd
   )
  where
 
 import Prelude()
 import Data.Accessor.Basic
+import qualified Data.Binary as Binary
 import Yi.Prelude
 import Data.Typeable
 import Data.Maybe
 import Data.List(length, splitAt)
+import Data.Word
 import qualified Control.Monad.State.Strict as Monad
 
 -------------------------------- Some design notes ----------------------
@@ -97,6 +105,14 @@ data Layout a
     }
   deriving(Typeable, Eq, Functor)
 
+instance NFData a => NFData (Layout a) where
+    rnf (SingleWindow a) 
+        = rnf a
+    rnf (Stack {orientation, wins})
+        = rnf orientation `seq` rnf wins
+    rnf (Pair {orientation, divPos, divRef, pairFst, pairSnd})
+        = rnf orientation `seq` rnf divPos `seq` rnf divRef `seq` rnf pairFst `seq` rnf pairSnd
+
 -- | Accessor for the 'DividerPosition' with given reference
 dividerPositionA :: DividerRef -> Accessor (Layout a) DividerPosition
 dividerPositionA ref = fromSetGet setter getter where
@@ -121,6 +137,33 @@ instance Show a => Show (Layout a) where
   show (Stack o s) = show o ++ " stack " ++ show s
   show p@(Pair{}) = show (orientation p) ++ " " ++ show (pairFst p, pairSnd p)
 
+instance Binary.Binary a => Binary.Binary (Layout a) where
+    put (SingleWindow a) = do
+        Binary.putWord8 0 
+        Binary.put a
+    put (Stack {orientation, wins}) = do
+        Binary.putWord8 1
+        Binary.put orientation
+        Binary.put wins
+    put (Pair {orientation, divPos, divRef, pairFst, pairSnd}) = do
+        Binary.putWord8 2
+        Binary.put orientation
+        Binary.put divPos
+        Binary.put divRef
+        Binary.put pairFst
+        Binary.put pairSnd
+    get = do
+        tag :: Word8 <- Binary.get
+        case tag of
+            0 -> SingleWindow <$> Binary.get
+            1 -> Stack <$> Binary.get <*> Binary.get
+            2 -> Pair <$> Binary.get 
+                      <*> Binary.get 
+                      <*> Binary.get 
+                      <*> Binary.get 
+                      <*> Binary.get
+            _ -> fail "invalid Yi.Layout.Layout tag."
+
 -- | The initial layout consists of a single window
 instance Initializable a => Initializable (Layout a) where
   initial = SingleWindow initial
@@ -130,6 +173,20 @@ data Orientation
   = Horizontal
   | Vertical
   deriving(Eq, Show)
+
+instance NFData Orientation where
+    rnf Horizontal = ()
+    rnf Vertical  = ()
+
+instance Binary Orientation where
+    put Horizontal = Binary.putWord8 0
+    put Vertical = Binary.putWord8 1
+    get = do
+        tag :: Word8 <- Binary.get
+        case tag of
+            0 -> return Horizontal
+            1 -> return Vertical
+            _ -> fail "invalid Yi.Layout.Orientation tag."
 
 -- | Divider reference
 type DividerRef = Int
@@ -142,7 +199,7 @@ type RelativeSize = Double
 
 ----------------------------------------------------- Layout managers
 -- TODO: add Binary requirement when possible
--- | The type of layout managers. See the layout managers 'tall', 'hPairNStack' and 'slidyTall' for some example implementations.
+-- | The type of layout managers. See the layout managers 'tall', 'hPairNStack' and 'slidyTall' for some example implementations
 class (Typeable m, Eq m) => LayoutManager m where
   -- | Given the old layout and the new list of windows, construct a
   -- layout for the new list of windows.
@@ -309,6 +366,21 @@ handleStack o bounds tiles =
       in
        concat . snd . mapAccumL doTile startPos $ tiles
 
+integerClampRects :: [(a, Rectangle)] -> [(a, Rectangle)]
+integerClampRects = fmap (\(a, r) -> (a, integerClampRect r))
+
+integerClampRect :: Rectangle -> Rectangle
+integerClampRect (Rectangle {rectX, rectY, rectWidth, rectHeight}) =
+    let rectX' :: Int = round rectX
+        rectY' :: Int = round rectY
+        rectWidth' = (round $ rectX + rectWidth) - rectX'
+        rectHeight' = (round $ rectY + rectHeight) - rectY'
+    in Rectangle { rectX = fromIntegral rectX'
+                 , rectY = fromIntegral rectY'
+                 , rectWidth = fromIntegral rectWidth'
+                 , rectHeight = fromIntegral rectHeight'
+                 }
+
 ----------- Flipping things
 -- | Things with orientations which can be flipped
 class Transposable r where transpose :: r -> r
@@ -363,3 +435,27 @@ evenStack o ls = stack o (fmap (\l -> (l,1)) ls)
 
 runLayoutM :: LayoutM a -> Layout a
 runLayoutM (LayoutM l) = Monad.evalState l 0
+
+data AddSide = AddLeft | AddRight
+
+splitAdd :: Orientation -> AddSide -> a -> DividerRef -> Layout a -> Layout a
+splitAdd o AddLeft v_0 newID (SingleWindow v_1) 
+    = Pair o 0.5 newID (SingleWindow v_0) (SingleWindow v_1)
+splitAdd o AddRight v_0 newID (SingleWindow v_1) 
+    = Pair o 0.5 newID (SingleWindow v_1) (SingleWindow v_0)
+
+splitAdd o_0 AddLeft v_0 newID (Stack o_1 subLayout) 
+    | o_0 == o_1  = Stack o_0 ( (SingleWindow v_0, 1.0) : subLayout ) 
+    | otherwise   = Pair  o_0 0.5 newID (SingleWindow v_0) (Stack o_1 subLayout)
+splitAdd o_0 AddRight v_0 newID (Stack o_1 subLayout) 
+    | o_0 == o_1  = Stack o_0 ( subLayout ++ [(SingleWindow v_0, 1.0)] ) 
+    | otherwise   = Pair  o_0 0.5 newID (Stack o_1 subLayout) (SingleWindow v_0)
+
+splitAdd o_0 AddLeft v_0 newID p@(Pair {orientation, divPos, divRef=_difRef, pairFst, pairSnd})
+    | o_0 == orientation = Stack o_0 ( (SingleWindow v_0, 1.0) : (pairFst, divPos) : [(pairSnd, 1.0 - divPos)])
+    | otherwise          = Pair o_0 0.5 newID (SingleWindow v_0) p
+splitAdd o_0 AddRight v_0 newID p@(Pair {orientation, divPos, divRef=_divRef, pairFst, pairSnd})
+    | o_0 == orientation = Stack o_0 ( (pairFst, divPos) : (pairSnd, 1.0 - divPos) : [(SingleWindow v_0, 1.0)])
+    | otherwise          = Pair o_0 0.5 newID p (SingleWindow v_0)
+
+

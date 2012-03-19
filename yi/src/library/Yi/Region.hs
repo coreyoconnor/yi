@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DeriveDataTypeable, TemplateHaskell #-}
 -- Copyright (C) 2008 JP Bernardy
 
@@ -34,6 +35,10 @@ import Prelude ()
 data Region = Region {regionDirection :: !Direction,
                       regionStart, regionEnd :: !Point} 
                  deriving (Typeable)
+
+instance NFData Region where
+    rnf (Region {regionDirection, regionStart, regionEnd}) 
+        = rnf regionDirection `seq` rnf regionStart `seq` rnf regionEnd
 
 $(derive makeBinary ''Region)
 
@@ -110,3 +115,4 @@ regionsOverlap border (Region _ x1 y1) (Region _ x2 y2) =
     cmp x1 y2 y1 || cmp x1 x2 y1
   where
     cmp a b c = a <= b && if border then b <=c  else b < c
+

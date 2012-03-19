@@ -1,6 +1,7 @@
 -- -*- haskell -*-
 -- Maintainer: Andrew Myers
 {
+{-# LANGUAGE BangPatterns  #-}
 {-# OPTIONS -w  #-}
 module Yi.Lexer.GitCommit
   ( initState, alexScanToken )

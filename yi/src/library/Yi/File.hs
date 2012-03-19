@@ -2,6 +2,7 @@ module Yi.File
  (
   -- * File-based actions
   editFile,       -- :: YiM BufferRef
+  fileEditActivity,       -- :: YiM BufferRef
 
   viWrite, viWriteTo, viSafeWriteTo,
   fwriteE,        -- :: YiM ()
@@ -41,6 +42,12 @@ import Yi.Regex
 -- windows to buffers.
 editFile :: FilePath -> YiM BufferRef
 editFile filename = do
+    b <- fileEditActivity filename
+    withEditor $ switchToBufferE b
+    return b
+
+fileEditActivity :: FilePath -> YiM BufferRef
+fileEditActivity filename = do
     f <- io $ userToCanonPath filename
 
     dupBufs <- filter ((maybe False (equalFilePath f)) . file) <$> gets bufferSet
@@ -55,40 +62,38 @@ editFile filename = do
                                        then fileToNewBuffer f
                                        else newEmptyBuffer f
       (h:_) -> return $ bkey h
-
-    withEditor $ switchToBufferE b
     return b
-  where
-    fileToNewBuffer :: FilePath -> YiM BufferRef
-    fileToNewBuffer f = do
-      now <- io getCurrentTime
-      contents <- io $ R.readFile f
 
-      b <- withEditor $ stringToNewBuffer (Right f) contents
-      withGivenBuffer b $ markSavedB now
+fileToNewBuffer :: FilePath -> YiM BufferRef
+fileToNewBuffer f = do
+  now <- io getCurrentTime
+  contents <- io $ R.readFile f
 
-      return b
+  b <- withEditor $ stringToNewBuffer (Right f) contents
+  withGivenBuffer b $ markSavedB now
 
-    newEmptyBuffer :: FilePath -> YiM BufferRef
-    newEmptyBuffer f =
-      withEditor $ stringToNewBuffer (Right f) (R.fromString "")
+  return b
 
-    setupMode :: FilePath -> BufferRef -> YiM BufferRef
-    setupMode f b = do
-      tbl <- asks (modeTable . yiConfig)
-      content <- withGivenBuffer b $ elemsB
+newEmptyBuffer :: FilePath -> YiM BufferRef
+newEmptyBuffer f =
+  withEditor $ stringToNewBuffer (Right f) (R.fromString "")
 
-      let header = take 1024 content
-          hmode = case header =~ "\\-\\*\\- *([^ ]*) *\\-\\*\\-" of 
-              AllTextSubmatches [_,m] ->m
-              _ -> ""
-          Just mode = (find (\(AnyMode m)->modeName m == hmode) tbl) <|>
-                      (find (\(AnyMode m)->modeApplies m f content) tbl) <|>
-                      Just (AnyMode emptyMode) 
-      case mode of
-          AnyMode newMode -> withGivenBuffer b $ setMode newMode
+setupMode :: FilePath -> BufferRef -> YiM BufferRef
+setupMode f b = do
+  tbl <- asks (modeTable . yiConfig)
+  content <- withGivenBuffer b $ elemsB
 
-      return b
+  let header = take 1024 content
+      hmode = case header =~ "\\-\\*\\- *([^ ]*) *\\-\\*\\-" of 
+          AllTextSubmatches [_,m] ->m
+          _ -> ""
+      Just mode = (find (\(AnyMode m)->modeName m == hmode) tbl) <|>
+                  (find (\(AnyMode m)->modeApplies m f content) tbl) <|>
+                  Just (AnyMode emptyMode) 
+  case mode of
+      AnyMode newMode -> withGivenBuffer b $ setMode newMode
+
+  return b
 
 -- | Revert to the contents of the file on disk
 revertE :: YiM ()

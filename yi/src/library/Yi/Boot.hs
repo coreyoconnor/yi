@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- | Boot process of Yi, as an instanciation of Dyre
 module Yi.Boot (yi, yiDriver, reload) where
 
@@ -12,6 +13,7 @@ import System.Exit
 
 import Yi.Config
 import Yi.Editor
+import Yi.Layout
 import Yi.Keymap
 import Yi.Main
 import qualified Yi.UI.Common as UI
@@ -23,8 +25,13 @@ realMain configs = do
 
 showErrorsInConf :: (Config, ConsoleConfig) -> String -> (Config, ConsoleConfig)
 showErrorsInConf (conf, confcon) errs
-    = (conf { initialActions = (makeAction $ splitE >> newBufferE (Left "*errors*") (R.fromString errs)) : initialActions conf }
-      , confcon)
+    = ( conf { initialActions = ( makeAction $ do
+                                    errorBufferID <- stringToNewBuffer (Left "*errors*") (R.fromString errs)
+                                    addBufferEditActivityE errorBufferID
+                                ) : initialActions conf 
+             }
+      , confcon
+      )
 
 yi, yiDriver :: Config -> IO ()
 yi = yiDriver

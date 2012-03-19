@@ -54,7 +54,7 @@ import Control.Monad.Reader (ask)
 import Control.Monad.Trans
 import Control.OldException
 import qualified Data.DelayList as DelayList
-import Data.List (intercalate, partition)
+import Data.List (intercalate, length, partition)
 import Data.List.Split (splitOn)
 import qualified Data.List.PointedList.Circular as PL
 import qualified Data.Map as M
@@ -124,7 +124,7 @@ startEditor cfg st = do
     runYi $ do if isNothing st
                     then postActions $ startActions cfg -- process options if booting for the first time
                     else withEditor $ modA buffersA (fmap (recoverMode (modeTable cfg))) -- otherwise: recover the mode of buffers
-               postActions $ initialActions cfg ++ [makeAction showErrors]
+               postActions $ initialActions cfg 
 
     runYi refreshEditor
 
@@ -139,13 +139,15 @@ postActions :: [Action] -> YiM ()
 postActions actions = do yi <- ask; liftIO $ output yi actions
 
 -- | Display the errors buffer if it is not already visible.
+-- XXX: Doesn't take into account if the buffer is visible in another tab.
 showErrors :: YiM ()
 showErrors = withEditor $ do
-               bs <- gets $ findBufferWithName "*errors*"
-               case bs of
-                 [] -> return ()
-                 _  -> do splitE
-                          switchToBufferWithNameE "*errors*"
+    bs <- gets $ findBufferWithName "*errors*"
+    case bs of
+        ( errorBufferKey : _) -> addBufferEditActivityE errorBufferKey
+        [] -> do
+            errorBufferKey <- stringToNewBuffer (Left "*errors*") (R.fromString "")
+            addBufferEditActivityE errorBufferKey
 
 -- | Process an event by advancing the current keymap automaton an
 -- execing the generated actions.
@@ -260,7 +262,7 @@ refreshEditor :: YiM ()
 refreshEditor = onYiVar $ \yi var -> do
         let cfg = yiConfig yi
             runOnWins a = runEditor cfg
-                                    (do ws <- getA windowsA
+                                    (do ws <- gets windows
                                         forM ws $ flip withWindowE a)
             style = configScrollStyle $ configUI $ cfg
         let scroll e3 = let (e4, relayout) = runOnWins (snapScreenB style) e3 in
@@ -342,7 +344,7 @@ errorEditor s = do withEditor $ printStatus (["error: " ++ s], errorStyle)
 -- (Not possible since the windowset type disallows it -- should it be relaxed?)
 closeWindow :: YiM ()
 closeWindow = do
-    winCount <- withEditor $ getsA windowsA PL.length
+    winCount <- withEditor $ length <$> gets windows
     tabCount <- withEditor $ getsA tabsA PL.length
     when (winCount == 1 && tabCount == 1) quitEditor
     withEditor $ tryCloseE
