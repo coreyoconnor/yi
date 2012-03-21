@@ -11,7 +11,7 @@ import Yi.Syntax.Tree
 import Yi.Syntax
 import Yi.Prelude 
 import Prelude ()
-import Data.Monoid hiding ((<>))
+import Data.Monoid (Endo(..), mappend, mempty)
 import Data.List (zip)
 
 

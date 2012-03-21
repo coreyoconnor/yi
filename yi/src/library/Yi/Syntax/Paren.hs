@@ -12,7 +12,7 @@ import Yi.Syntax.Tree
 import Yi.Syntax
 import Yi.Prelude 
 import Prelude ()
-import Data.Monoid hiding ((<>))
+import Data.Monoid (Endo(..), appEndo, mappend)
 import Data.DeriveTH
 import Data.Maybe
 import Data.List (filter, takeWhile)
