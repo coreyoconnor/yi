@@ -210,7 +210,7 @@ library
     deepseq >= 1.1.0.0,
     dlist >=0.4.1,
     dyre >=0.7,
-    filepath>=1.1 && <1.5,
+    filepath>=1.1 && <1.4,
     fingertree >= 0 && <0.1,
     ghc-paths ==0.1.*,
     hashable < 1.2,
@@ -234,6 +234,9 @@ library
   ghc-options: -Wall -fno-warn-orphans
   if flag(hacking)
     ghc-prof-options: -prof -auto-all
+
+  if impl(ghc >=7.2)
+     extensions: NondecreasingIndentation
 
   if impl(ghc >=7.2)
      extensions: NondecreasingIndentation
@@ -299,7 +302,7 @@ library
         Yi.UI.Vty.Layout
         Yi.UI.Vty.Render
     build-depends:
-      unix-compat >=0.1 && <0.3,
+      unix-compat >=0.1 && <0.4,
       vty >= 4.7.0.0 && <5
     cpp-options: -DFRONTEND_VTY
 
@@ -358,7 +361,7 @@ executable parserTest
     array,
     containers,
     directory,
-    filepath>=1.1 && <1.5
+    filepath>=1.1 && <1.4
   if !flag(dochack)
     build-depends: yi
 
