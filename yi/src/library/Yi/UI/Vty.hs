@@ -371,16 +371,16 @@ drawText h w topPoint point tabWidth bufData
 
   pntpos = listToMaybe [(y,x) | (y,l) <- zip [0..] lns0, (x,(_char,(_attr,p))) <- zip [0..] l, p == point]
 
-  -- fill lines with blanks, so the selection looks ok.
+  -- Do not fill to the end of line with spaces/blanks. This provides the equivalent experience to
+  -- vim and emacs when selecting text from a terminal emulator.
+  -- todo: use another layer or extend lines when performing a visual block selection to actually
+  -- look like a block.
   rendered_lines = map fillColorLine lns0
   colorChar (c, (a, _aPoint)) = Vty.char a c
 
   fillColorLine :: [(Char, (Vty.Attr, Point))] -> Image
-  fillColorLine [] = char_fill Vty.def_attr ' ' w 1
+  fillColorLine [] = empty_image
   fillColorLine l = horiz_cat (map colorChar l) 
-                    <|>
-                    char_fill a ' ' (w - length l) 1
-                    where (_,(a,_x)) = last l
 
   -- | Cut a string in lines separated by a '\n' char. Note
   -- that we add a blank character where the \n was, so the
