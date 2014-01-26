@@ -1,0 +1,15 @@
+#!/bin/bash
+( 
+    cd yi/ && \
+        cabal install -f-pango \
+            --ghc-pkg-options=--force \
+            --constraint 'filepath == 1.3.0.0' \
+            --force-reinstall
+) && \
+( 
+    cd yi-contrib/ && \
+        cabal install -f-pango \
+            --ghc-pkg-options=--force \
+            --constraint 'filepath == 1.3.0.0' \
+            --force-reinstall
+)
