@@ -220,6 +220,7 @@ library
     Yi.UI.Batch
     Yi.UI.Utils
     Yi.UI.TabBar
+    Yi.UI.Test
     Yi.Verifier.JavaScript
     Yi.Window
     Yi.Char.Unicode

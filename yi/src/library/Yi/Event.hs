@@ -12,13 +12,13 @@ import Data.Char (chr,ord)
 import Data.Monoid
 
 data Modifier = MShift | MCtrl | MMeta | MSuper | MHyper
-                deriving (Show,Eq,Ord)
+                deriving (Show,Eq,Ord,Read)
 
 data Key = KEsc | KFun Int | KPrtScr | KPause | KASCII Char | KBS | KIns
          | KHome | KPageUp | KDel | KEnd | KPageDown | KNP5 | KUp | KMenu
-         | KLeft | KDown | KRight | KEnter | KTab deriving (Eq,Show,Ord)
+         | KLeft | KDown | KRight | KEnter | KTab deriving (Eq,Show,Ord,Read)
 
-data Event = Event Key [Modifier] deriving (Eq)
+data Event = Event Key [Modifier] deriving (Eq,Read)
 
 instance Ord Event where
     compare (Event k1 m1) (Event k2 m2) = compare m1 m2 `mappend` compare k1 k2

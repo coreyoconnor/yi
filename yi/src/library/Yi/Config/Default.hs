@@ -54,6 +54,7 @@ import qualified Yi.UI.Pango
 import qualified Yi.UI.Cocoa
 #endif
 import qualified Yi.UI.Batch
+import qualified Yi.UI.Test
 
 {-# ANN availableFrontends "HLint: ignore Use list literal" #-}
 availableFrontends :: [(String, UIBoot)]
@@ -68,6 +69,7 @@ availableFrontends =
    ("cocoa", Yi.UI.Cocoa.start) :
 #endif
    ("batch", Yi.UI.Batch.start) :
+   ("test", Yi.UI.Test.start) :
    []
 
 -- | List of published Actions
@@ -142,7 +144,10 @@ defaultConfig =
            , configAutoHideTabBar = True
            , configWindowFill = ' '
            , configTheme = defaultTheme
+#ifdef FRONTEND_VTY
            , configVty = def
+#endif
+           , replayEvents = def
            }
          , defaultKm        = modelessKeymapSet nilKeymap
          , startActions     = []

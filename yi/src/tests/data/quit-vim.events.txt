@@ -1,0 +1,3 @@
+Event KASCII ':' []
+Event KASCII 'q' []
+Event KEnter []

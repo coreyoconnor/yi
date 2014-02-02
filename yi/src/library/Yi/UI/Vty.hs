@@ -184,7 +184,7 @@ layout :: UI -> Editor -> IO Editor
 layout ui e = do
   (rows,cols) <- readIORef (scrsize ui)
   let ws = windows e
-      tabBarHeight = if hasTabBar e ui then 1 else 0
+      tabBarHeight = if Common.hasTabBar (config ui) e then 1 else 0
       (cmd, _) = statusLineInfo e
       niceCmd = arrangeItems cmd cols (maxStatusHeight e)
       cmdHeight = length niceCmd
@@ -220,7 +220,7 @@ refresh :: UI -> Editor -> IO ()
 refresh ui e = do
   (_,xss) <- readRef (scrsize ui)
   let ws = windows e
-      tabBarHeight = if hasTabBar e ui then 1 else 0
+      tabBarHeight = if Common.hasTabBar (config ui) e then 1 else 0
       windowStartY = tabBarHeight
       (cmd, cmdSty) = statusLineInfo e
       niceCmd = arrangeItems cmd xss (maxStatusHeight e)
@@ -232,26 +232,25 @@ refresh ui e = do
       tabBarImages = renderTabBar e ui xss
   logPutStrLn "refreshing screen."
   logPutStrLn $ "startXs: " ++ show startXs
-  Vty.update (vty ui)
-      ( pic_for_image ( vert_cat tabBarImages
-                        <->
-                        vert_cat (toList wImages)
-                        <->
-                        vert_cat (fmap formatCmdLine niceCmd)
-                      )
-      ) { pic_cursor = case cursor (PL._focus renders) of
-                        Just (y,x) -> Cursor (toEnum x) (toEnum $ y + PL._focus startXs)
-                        -- Add the position of the window to the position of the cursor
-                        Nothing -> NoCursor
-                        -- This case can occur if the user resizes the window.
-                        -- Not really nice, but upon the next refresh the cursor will show.
-        }
-
+  let pic = (pic_for_image ( vert_cat tabBarImages
+                            <->
+                            vert_cat (toList wImages)
+                            <->
+                            vert_cat (fmap formatCmdLine niceCmd)
+                          )) { pic_cursor = case cursor (PL._focus renders) of
+                                            Just (y,x) -> Cursor x (y + PL._focus startXs)
+                                            -- Add the position of the window to the position of the cursor
+                                            Nothing -> NoCursor
+                                            -- This case can occur if the user resizes the window.
+                                            -- Not really nice, but upon the next refresh the cursor will show.
+                            }
+  Vty.update (vty ui) pic
+  logPutStrLn $ "pic: " ++ (take 200 $ show pic) ++ " [" ++ show (length $ show pic) ++ " more]"
   return ()
 
 -- | Construct images for the tabbar if at least one tab exists.
 renderTabBar :: Editor -> UI -> Int -> [Image]
-renderTabBar e ui xss = [tabImages <|> extraImage | hasTabBar e ui]
+renderTabBar e ui xss = [tabImages <|> extraImage | Common.hasTabBar (config ui) e]
   where tabImages       = foldr1 (<|>) $ fmap tabToVtyImage $ tabBarDescr e
         extraImage      = withAttributes (tabBarAttributes uiStyle) (replicate (xss - fromEnum totalTabWidth) ' ')
 
@@ -262,10 +261,6 @@ renderTabBar e ui xss = [tabImages <|> extraImage | hasTabBar e ui]
         baseAttr True  sty = attributesToAttr (appEndo (tabInFocusStyle uiStyle) sty) Vty.def_attr
         baseAttr False sty = attributesToAttr (appEndo (tabNotFocusedStyle uiStyle) sty) Vty.def_attr `Vty.with_style` Vty.underline
         tabToVtyImage _tab@(TabDescr text inFocus) = Vty.string (tabAttr inFocus) (tabTitle text)
-
--- | Determine whether it is necessary to render the tab bar
-hasTabBar :: Editor -> UI -> Bool
-hasTabBar e ui = (not . configAutoHideTabBar . configUI . config $ ui) || PL.length (e ^. tabsA) > 1
 
 -- As scanr, but generalized to a traversable (TODO)
 scanrT :: (Int -> Int -> Int) -> Int -> PL.PointedList Int -> PL.PointedList Int

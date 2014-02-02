@@ -2,7 +2,11 @@
 
 module Yi.UI.Common where
 
+import Yi.Config
 import Yi.Editor
+
+import Control.Lens hiding (wrapped,set)
+import qualified Data.List.PointedList.Circular as PL
 
 {- | Record presenting a frontend's interface.
 
@@ -65,3 +69,8 @@ dummyUI = UI
   , layout           = return
   , reloadProject    = const (return ())
   }
+
+-- | Determine whether it is necessary to render the tab bar
+hasTabBar :: Config -> Editor -> Bool
+hasTabBar config e = (not $ configAutoHideTabBar $ configUI $ config) || PL.length (e ^. tabsA) > 1
+

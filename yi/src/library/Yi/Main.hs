@@ -18,6 +18,7 @@ module Yi.Main (
 import Control.Monad.Error
 import Data.Char
 import Data.List (intercalate)
+import Data.Monoid (mappend)
 import Distribution.Text (display)
 import System.Console.GetOpt
 import System.Exit
@@ -31,6 +32,7 @@ import Yi.Core
 import Yi.Debug
 import Yi.File
 import Yi.Paths (getConfigDir)
+import qualified Yi.UI.Test
 import Paths_yi
 
 #ifdef FRONTEND_COCOA
@@ -78,6 +80,7 @@ data Opts = Help
           | GhcOption String
           | Debug
           | OpenInTabs
+          | ReplayEvents String
 
 -- | List of editors for which we provide an emulation.
 editors :: [(String,Config -> Config)]
@@ -89,8 +92,7 @@ editors = [("emacs", toEmacsStyleConfig),
 {-# ANN options "HLint: ignore Use string literal" #-}
 options :: [OptDescr Opts]
 options =
-  [ Option []     ["self-check"]  (NoArg  SelfCheck)             "Run self-checks"
-  , Option ['f']  ["frontend"]    (ReqArg Frontend   "FRONTEND") frontendHelp
+  [ Option ['f']  ["frontend"]    (ReqArg Frontend   "FRONTEND") frontendHelp
   , Option ['y']  ["config-file"] (ReqArg ConfigFile "PATH")     "Specify a configuration file"
   , Option ['V']  ["version"]     (NoArg  Version)               "Show version information"
   , Option ['h']  ["help"]        (NoArg  Help)                  "Show this help"
@@ -99,8 +101,15 @@ options =
   , Option []     ["as"]          (ReqArg EditorNm   "EDITOR")   editorHelp
   , Option []     ["ghc-option"]  (ReqArg GhcOption  "OPTION")   "Specify option to pass to ghc when compiling configuration file"
   , Option [openInTabsShort] [openInTabsLong] (NoArg  OpenInTabs)  "Open files in tabs"
-  ] where frontendHelp = "Select frontend, which can be one of:\n" ++ intercalate ", " frontendNames
-          editorHelp   = "Start with editor keymap, where editor is one of:\n" ++ (intercalate ", " . fmap fst) editors
+  ] `mappend` testOptions
+  where frontendHelp = "Select frontend, which can be one of:\n" ++ intercalate ", " frontendNames
+        editorHelp   = "Start with editor keymap, where editor is one of:\n" ++ (intercalate ", " . fmap fst) editors
+
+testOptions :: [OptDescr Opts]
+testOptions =
+  [ Option [] ["replay-events"] (ReqArg ReplayEvents "REPLAY_EVENTS") "Specify path to file containing space delimeted Yi.Event"
+  , Option [] ["self-check"]    (NoArg  SelfCheck)                    "Run self-checks"
+  ]
 
 openInTabsShort :: Char
 openInTabsShort = 'p'
@@ -148,6 +157,9 @@ getConfig shouldOpenInTabs (cfg, cfgcon) opt =
              Nothing -> fail $ "Unknown emulation: " ++ show emul
       GhcOption ghcOpt -> return (cfg, cfgcon { ghcOptions = ghcOptions cfgcon ++ [ghcOpt] })
       ConfigFile f -> return (cfg, cfgcon { userConfigDir = return f })
+      ReplayEvents eventFile -> do
+            let configUI' = (configUI cfg) { replayEvents = return eventFile }
+            return (cfg { startFrontEnd = Yi.UI.Test.start, configUI = configUI' }, cfgcon)
       _ -> return (cfg, cfgcon)
   where
     prependActions as = return (cfg { startActions = fmap makeAction as ++ startActions cfg }, cfgcon)

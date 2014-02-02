@@ -39,7 +39,8 @@ data UIConfig = UIConfig {
    configWindowFill :: Char,
    -- ^ The char with which to fill empty window space.  Usually '~' for vi-like
    -- editors, ' ' for everything else.
-   configTheme :: Theme             -- ^ UI colours
+   configTheme :: Theme,            -- ^ UI colours
+   replayEvents :: Maybe String     -- ^ Path to file containing a Event list that will be replayed in the test UI.
   }
 
 -- | When should we use a \"fat\" cursor (i.e. 2 pixels wide, rather than 1)? Fat cursors have only been implemented for the Pango frontend.
