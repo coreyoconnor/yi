@@ -27,11 +27,11 @@ import Yi.Window (Window(..))
 
 import Control.Applicative
 import Control.Concurrent
-import Control.Lens
+import Control.Lens hiding (lazy)
 import Control.Monad (void)
 import Control.Monad.Base
 
-import Data.Foldable (toList)
+import Data.Foldable (toList, forM_)
 import Data.Traversable (mapM)
 import Data.Hashable (hash)
 import Data.IORef
@@ -72,7 +72,7 @@ start cfg eventOut actionOut editor = liftBase $ do
   events <- readAllEvents eventsFile
   logPutStrLn $ "Replaying " ++ show (length events) ++ " events."
   void $ forkIO $ inputLoop ui eventOut actionOut events
-  void $ forkIO $ renderLoop ui
+  void $ forkIO $ renderLoop cfg ui
   return $ mkUI cfg ui
 
 readAllEvents :: String -> IO [Event]
@@ -90,15 +90,17 @@ inputLoop ui eventOut actionOut (event:events) = do
   inputLoop ui eventOut actionOut events
 
 -- (?) Implicit dependency on processing an event implies the first uiDirty put.
-renderLoop ui = do
+renderLoop config ui = do
   takeMVar $ uiDirty ui
   e <- readIORef (uiEditor ui)
-  if (null $ pendingEvents e)
-  then putMVar (uiEventsProcessed ui) ()
-  else renderLoop ui
+  let renders = fmap (renderWindow (configUI config) e 80) (PL.withFocus $ windows e)
+  forM_ renders $ \(Rendered summary) -> putStrLn summary
+  pushed <- tryTakeMVar (uiEventsPushed ui)
+  if Nothing == pushed
+  then renderLoop config ui
+  else putMVar (uiEventsProcessed ui) ()
 
 main ui = do
-  takeMVar $ uiEventsPushed ui
   takeMVar $ uiEventsProcessed ui
   return ()
 
@@ -143,6 +145,11 @@ computeHeights totalHeight ws = y+r-1 : repeat y
 getRegionImpl :: Window -> UIConfig -> Editor -> Int -> Int -> Region
 getRegionImpl win cfg e w h = region
   where (_,region) = drawWindow cfg e (error "focus must not be used") win w h
+
+renderWindow :: UIConfig -> Editor -> Int -> (Window, Bool) -> Rendered
+renderWindow cfg e width (win,hasFocus) =
+    let (rendered,_) = drawWindow cfg e hasFocus win width (height win)
+    in rendered
 
 drawWindow :: UIConfig -> Editor -> Bool -> Window -> Int -> Int -> (Rendered, Region)
 drawWindow cfg e focused win w h = (Rendered summary, mkRegion fromMarkPoint toMarkPoint')
