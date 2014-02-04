@@ -195,7 +195,7 @@ defaultCuaConfig = toCuaStyleConfig defaultConfig
 toEmacsStyleConfig, toVimStyleConfig, toVim2StyleConfig, toCuaStyleConfig :: Config -> Config
 toEmacsStyleConfig cfg
     = cfg {
-            configUI = (configUI cfg) { configVty = def, configScrollStyle = Just SnapToCenter},
+            configUI = (configUI cfg) {configScrollStyle = Just SnapToCenter},
             defaultKm = Emacs.keymap,
             startActions = makeAction openScratchBuffer : startActions cfg,
             configInputPreprocess = escToMeta,

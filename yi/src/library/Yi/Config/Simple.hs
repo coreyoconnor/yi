@@ -106,7 +106,10 @@ import Yi.Config(Config, UIConfig,
                  startFrontEndA, configUIA, startActionsA, initialActionsA, defaultKmA,
                  configInputPreprocessA, modeTableA, debugModeA,
                  configRegionStyleA, configKillringAccumulateA, bufferUpdateHandlerA,
-                 configVtyA, configFontNameA, configFontSizeA, configScrollWheelAmountA,
+#ifdef FRONTEND_VTY
+                 configVtyA,
+#endif
+                 configFontNameA, configFontSizeA, configScrollWheelAmountA,
                  configScrollStyleA, configCursorStyleA, CursorStyle(..),
                  configLeftSideScrollBarA, configAutoHideScrollBarA, configAutoHideTabBarA,
                  configLineWrapA, configWindowFillA, configThemeA, layoutManagersA, configVarsA,
